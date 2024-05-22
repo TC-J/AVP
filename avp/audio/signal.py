@@ -26,13 +26,30 @@ import soundfile
 import pydub
 
 import librosa
+
 import librosa.feature
+
 import librosa.display
+
+import pydub
 
 
 class ndsignal(ndarray):
+
+    def load(fpath: str, time_start: float = 0., duration: float | None = None):
+        audio: pydub.AudioSegment = pydub.AudioSegment.from_file(fpath, start_second=time_start, duration=duration)
+
+        return ndsignal(
+            samples=audio.get_array_of_samples(),
+            sr=audio.frame_rate
+        )
+
+
     def __new__(cls, samples, sr: int = 22_050, into_sample_major: bool = True):
         obj = np.asarray(samples).view(cls)
+
+        if len(list(obj.shape)) == 1:
+            obj = np.expand_dims(obj, 0)
 
         if into_sample_major:
             obj = obj.transpose()
@@ -57,42 +74,21 @@ class ndsignal(ndarray):
     
     
     def __setitem__(self, key, value):
-            super().__setitem__(self._key(key), value)
+        super().__setitem__(self._key(key), value)
 
     
-    def _keyshape(self, key):
-        if isinstance(key, int | float):
-            return (1, self.channels) if self.in_sample_major else (self.channels, 1)
-        
-        elif isinstance(key, slice):
-            modified_slice = self._slice(key)
-
-            samples = (modified_slice.stop - modified_slice.start) // modified_slice.step
-
-            return (samples, self.channels) if self.in_sample_major else (self.channels, samples)
-        
-        # key is a tuple
-        else:
-            subkeyshapes = list()
-
-            for subkey in list(key):
-                subkeyshapes.append(self._keyshape(subkey))
-            
-            return (subkeyshapes[0][0] + subkeyshapes[1][0], self.channels) if self.in_sample_major else (self.channels, subkeyshapes[0][1] + subkeyshapes[1][1])
-
-
     def _index(self, index: float | int):
         return index if isinstance(index, int) else round(index / self.T)
 
 
     def _slice(self, slc: slice):
-        slc.start = slc._index(slc.start) if slc.start else 0
+        start = self._index(slc.start) if slc.start else 0
 
-        slc.stop = slc._index(slc.stop) if slc.stop else self.N
+        stop = self._index(slc.stop) if slc.stop else self.N
 
-        slc.step = slc._index(slc.step) if slc.step else 1
+        step = self._index(slc.step) if slc.step else 1
 
-        return slc
+        return slice(start, stop, step)
 
 
     def _key(self, key: tuple | slice | int | float):
@@ -171,6 +167,10 @@ class ndsignal(ndarray):
         self.in_sample_major = True
 
         return self
+    
+    
+    def save(self, fpath: str):
+        pass
 
 
 class signal:
