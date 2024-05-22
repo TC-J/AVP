@@ -1,0 +1,35 @@
+[tool.poetry]
+name = "avp"
+version = "0.1.0"
+description = "Audio & Video in Python"
+authors = ["Tyler Curtis Jowers <jowerstc@outlook.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+numpy = "^1.26.4"
+scipy = "^1.12.0"
+soundfile = "^0.12.1"
+audio-extract = "^0.6.0"
+matplotlib = "^3.8.3"
+resampy = "^0.4.3"
+pydub = "^0.25.1"
+librosa = "^0.10.1"
+ipython = "^8.23.0"
+python-speech-features = "^0.6"
+pyloudnorm = "^0.1.1"
+pywavelets = "^1.6.0"
+pysimplegui = "^5.0.4"
+pyqt6 = "^6.6.1"
+rich = "^13.7.1"
+opencv-python = "^4.9.0.80"
+
+
+[tool.poetry.group.dev.dependencies]
+jupyter = "^1.0.0"
+ipykernel = "^6.29.4"
+ipython = "^8.23.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
