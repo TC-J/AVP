@@ -36,12 +36,12 @@ import pydub
 
 class ndsignal(ndarray):
 
-    def load(fpath: str, time_start: float = 0., duration: float | None = None):
-        audio: pydub.AudioSegment = pydub.AudioSegment.from_file(fpath, start_second=time_start, duration=duration)
+    def load(fpath: str, time_start: float = 0., duration: float | None = None, resample_hz = None):
+        samples, sr = librosa.load(fpath, offset=time_start, duration=duration, mono=False, sr=resample_hz)
 
         return ndsignal(
-            samples=audio.get_array_of_samples(),
-            sr=audio.frame_rate
+            samples=samples, 
+            sr=sr
         )
 
 
@@ -56,7 +56,7 @@ class ndsignal(ndarray):
 
         obj._sr = sr
 
-        obj._in_sample_major = into_sample_major
+        obj._in_sample_major = True
 
         return obj
 
@@ -70,7 +70,20 @@ class ndsignal(ndarray):
     
     
     def __getitem__(self, key):
-        return super().__getitem__(self._key(key))
+        samples = super().__getitem__(self._key(key))
+
+        if np.isscalar(samples):
+            return samples
+
+        elif isinstance(key, tuple):
+            if isinstance(key[1], int):
+                return ndsignal(samples, self.sr)
+
+            else:
+                return ndsignal(samples, self.sr, False)
+
+        else:
+            return ndsignal(samples, self.sr, False)
     
     
     def __setitem__(self, key, value):
@@ -157,23 +170,27 @@ class ndsignal(ndarray):
 
     def as_channel_major(self) -> Self:
         """return the ndsignal in channel-major; in the shape: (n_channels, n_samples)."""
-        self.in_sample_major = False
+        copy = self.copy()
 
-        return self
+        copy.in_sample_major = False
+
+        return copy
     
     
     def as_sample_major(self) -> Self:
         """return the ndsignal in sample-major; in the shape: (n_samples, n_channels)."""
-        self.in_sample_major = True
+        copy = self.copy()
 
-        return self
+        copy.in_sample_major = True
+
+        return copy
     
     
     def save(self, fpath: str):
         pass
 
 
-class signal:
+class Signal:
     def __init__(self, ndsig: ndsignal):
         self.inner = ndsig
     

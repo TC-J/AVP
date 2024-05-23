@@ -23,6 +23,8 @@ pysimplegui = "^5.0.4"
 pyqt6 = "^6.6.1"
 rich = "^13.7.1"
 opencv-python = "^4.9.0.80"
+ffmpeg = "^1.4"
+pytest = "^8.2.1"
 
 
 [tool.poetry.group.dev.dependencies]
