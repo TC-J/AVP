@@ -99,7 +99,8 @@ class NDSignalTestCase(unittest.TestCase):
         assert signal.duration == 0.5
 
         assert signal.N == 0.5 * 44100
-
+    
+    
 
     def test_time_indices_setter(self):
         pass

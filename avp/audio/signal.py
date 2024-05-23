@@ -56,8 +56,6 @@ class ndsignal(ndarray):
 
         obj._sr = sr
 
-        obj._in_sample_major = True
-
         return obj
 
 
@@ -66,8 +64,6 @@ class ndsignal(ndarray):
 
         self._sr = getattr(obj, "_sr", None)
 
-        self._in_sample_major = getattr(obj, "_in_sample_major", True)
-    
     
     def __getitem__(self, key):
         samples = super().__getitem__(self._key(key))
@@ -132,13 +128,13 @@ class ndsignal(ndarray):
     @property
     def channels(self) -> int:
         """the number of channels."""
-        return self.shape[1] if self.in_sample_major else self.shape[0]
+        return self.shape[1]
     
 
     @property
     def N(self) -> int:
         """the total number of samples."""
-        return self.shape[0] if self.in_sample_major else self.shape[1]
+        return self.shape[0]
     
 
     @property
@@ -153,37 +149,9 @@ class ndsignal(ndarray):
         return self.T * self.N
     
 
-    @property
-    def in_sample_major(self):
-        """the shape is (number_of_samples, number_of_channels) when true and (number_of_channels, number_of_samples) when false."""
-        return self._in_sample_major
-    
-    
-    @in_sample_major.setter
-    def in_sample_major(self, value: bool):
-        """the shape is (number_of_samples, number_of_channels) when true and (number_of_channels, number_of_samples) when false."""
-        if (not self._in_sample_major and value) or (self._in_sample_major and not value):
-            self.resize((self.shape[1], self.shape[0]))
-
-        self._in_sample_major = value
-    
-
     def as_channel_major(self) -> Self:
-        """return the ndsignal in channel-major; in the shape: (n_channels, n_samples)."""
-        copy = self.copy()
-
-        copy.in_sample_major = False
-
-        return copy
-    
-    
-    def as_sample_major(self) -> Self:
-        """return the ndsignal in sample-major; in the shape: (n_samples, n_channels)."""
-        copy = self.copy()
-
-        copy.in_sample_major = True
-
-        return copy
+        """return as an ndarray in channel-major; in the shape: (n_channels, n_samples)."""
+        return self.transpose().view(np.ndarray)
     
     
     def save(self, fpath: str):
@@ -191,9 +159,9 @@ class ndsignal(ndarray):
 
 
 class Signal:
-    def __init__(self, ndsig: ndsignal):
-        self.inner = ndsig
-    
+    def __init__(self, audio: ndsignal):
+        self.inner = audio
+
 
     def __getitem__(self, key):
         return self.inner.__getitem__(key)
