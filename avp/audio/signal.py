@@ -1,15 +1,16 @@
-from ast import List
-from sqlite3 import Time
-from typing import Any, Self
+from typing import Any, Self, List
 
 import math
+
+from pathlib import Path
+
 from warnings import warn
 
 import numpy as np
 
 from numpy.typing import NDArray
 
-from numpy import ndarray
+from numpy import full, ndarray
 
 import matplotlib.pyplot as plt
 
@@ -33,11 +34,36 @@ import librosa.display
 
 import pydub
 
+from avp.audio.util import _standardize_array, _pretty_time_format, _add_channels_as_copy
+
+
 
 class ndsignal(ndarray):
+    """this is an array of audio samples in sample-major `(n_samples, n_channels)`.
 
-    def load(fpath: str, time_start: float = 0., duration: float | None = None, resample_hz = None):
-        samples, sr = librosa.load(fpath, offset=time_start, duration=duration, mono=False, sr=resample_hz)
+        this is an `ndarray` derived class with information like the sample rate and duration of an audio array added in.
+
+        this allows for both time (using float indices)- and sample (using integer indices)-based indexing of the samples;
+
+        indexing with `1.0` means the sample at one-second while indexing with `1` means the first sample.
+
+        slicing works the same way: provide floats for time, and integers for sample-numbers.
+
+        when using operations on an `ndsignal` with an `ndarray`, the `ndarray` is expected to be in channel-major `(n_channels, n_samples)`; or `(n_samples,)`. *see NOTE*
+
+        ## NOTE
+
+        outside `ndarray` audio arrays used with this class should be in channel-major: `(n_channels, n_samples)`; or `(n_samples,)`.
+
+        we assume all `ndsignal` instances are in sample-major while all `ndarray` instances (of audio samples) are in channel-major  `(n_channels, n_samples)` or `(n_samples,)`.
+
+        all `ndarray` instances are converted into a the cooperative format needed internally before operating on the provided `ndarray`; so any outside libraries interacting with this should be in channel-major while our arrays are in sample-major.
+
+        this is important to note; this helps us; throughout the library we make the above assumption for convienience and standardization.
+    """
+
+    def load(fpath: str, time_start: float = 0., duration: float | None = None, resample_hz = None, to_mono: bool = False):
+        samples, sr = librosa.load(fpath, offset=time_start, duration=duration, mono=to_mono, sr=resample_hz)
 
         return ndsignal(
             samples=samples, 
@@ -45,14 +71,14 @@ class ndsignal(ndarray):
         )
 
 
-    def __new__(cls, samples, sr: int = 22_050, into_sample_major: bool = True):
+    def __new__(cls, samples, sr: int = 22_050, _no_transpose = False):
+        """create a new ndsignal; the samples are in channel-major `(n_samples,)`; or `(n_channels, n_samples)`"""
         obj = np.asarray(samples).view(cls)
 
         if len(list(obj.shape)) == 1:
             obj = np.expand_dims(obj, 0)
 
-        if into_sample_major:
-            obj = obj.transpose()
+        obj = obj.transpose() if not _no_transpose else obj
 
         obj._sr = sr
 
@@ -76,14 +102,29 @@ class ndsignal(ndarray):
                 return ndsignal(samples, self.sr)
 
             else:
-                return ndsignal(samples, self.sr, False)
+                return ndsignal(samples, self.sr, True)
 
         else:
-            return ndsignal(samples, self.sr, False)
+            return ndsignal(samples, self.sr, True)
     
     
     def __setitem__(self, key, value):
+#        if isinstance(value, np.ndarray | list):
+#            value = _standardize_array(value)
+
         super().__setitem__(self._key(key), value)
+
+
+    def __str__(self) -> str:
+        duration = _pretty_time_format(time=self.duration, starting_places=12, unit_delim=" ", fullunitname=True)
+
+        period = _pretty_time_format(time=self.T, starting_places=12, unit_delim=" ", fullunitname=True)
+
+        return f"NDSignal(\n Total Duration = {duration},\n Time Per Sample (Period; T) = {period},\n Samples Per Channel (N) = {self.N:,},\n Channels = {self.channels},\n Sampling Rate = {self.sr:,} hertz\n)"
+    
+    
+    def __repr__(self):
+        return super().__repr__()
 
     
     def _index(self, index: float | int):
@@ -149,18 +190,67 @@ class ndsignal(ndarray):
         return self.T * self.N
     
 
-    def as_channel_major(self) -> Self:
+    def as_channel_major(self) -> np.ndarray:
         """return as an ndarray in channel-major; in the shape: (n_channels, n_samples)."""
         return self.transpose().view(np.ndarray)
     
     
+    def insert(self, at: int | float, signl: Self | np.ndarray | list) -> None:
+        """
+            insert an audio signal at the given sample-index (integer provided) or time-index (float provided).
+        """
+        signl = _standardize_array(signl)
+
+        at = self._index(at)
+
+    
+    def split(self, interval: float | int) -> List[np.ndarray]:
+        """split the audio signal into an array of smaller ndarrays (in channel-major); the interval is a sample-index when an integer is provided and a time index when a float is provided."""
+        interval = self._index(interval)
+
+        lst = list()
+
+        for i in range(0, self.N, interval):
+            if i + interval < self.N:
+                lst.append(self[i:i + interval, :].transpose().view(np.ndarray))
+
+            else:
+                lst.append(self[i:, :].transpose().view(np.ndarray))
+
+
     def save(self, fpath: str):
         pass
 
 
-class Signal:
-    def __init__(self, audio: ndsignal):
+class signal:
+    """
+        this is a digital signal.
+
+        the difference between this and `ndsignal` is that this contains an ndsignal; making it a mutable container for the ndsignal;
+        this allows resampling without tracking a new variable.
+
+        so view this as a digital-signal-processing context for the audio signals.
+    """
+    def __init__(self, audio: ndsignal | None, path: str | Path, time_start: float | None, duration: float | None, resample_hz: int | None = None, channels: int | None = None):
+        # allow users to load at a time-offset. ?
+        start = time_start or 0
+
+        # load audio
+        # allow users to resample and specify one-channel. ?
+        audio = audio or ndsignal.load(path, start, duration, resample_hz, to_mono = True if channels == 1 else False)
+
+        channels = channels or audio.channels 
+
+        # allow the user to increase the number of channels in the original audio. ?
+        # copy the first channel into the number of requested channels.
+        # this is when the audio contains less channels than what was specified.
+        if channels > audio.channels:
+            first_channel_data = audio[:, 0]
+
+            audio = np.repeat(first_channel_data[:, np.newaxis], channels, axis=1)
+        
         self.inner = audio
+
 
 
     def __getitem__(self, key):
@@ -169,3 +259,5 @@ class Signal:
     
     def __setitem__(self, key, value):
         self.inner.__setitem__(key, value)
+    
+

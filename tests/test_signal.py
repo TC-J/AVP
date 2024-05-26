@@ -43,30 +43,21 @@ class NDSignalTestCase(unittest.TestCase):
             # period is set properly.
             assert signal_0.T == (1 / sr)
 
-            # test signals created with a different sample-input-format but equivalent values..
-
-            # create an ndsignal that is already in sample-major form.
-            signal_1 = ndsignal([[1, 1], [2, 2], [3, 3]], sr=sr, into_sample_major=False)
-
-            # signals have the same sample-rates.
-            assert signal_1.sr == signal_0.sr
-
-            # signals have the same period.
-            assert signal_1.T == signal_0.T
+            assert np.all(signal_0 == np.array([[1, 1], [2,2], [3,3]]))
 
 
     def test_signal_load(self):
-        signal = ndsignal.load("assets/audios/piano_c.wav")
+        signl = ndsignal.load("assets/audios/piano_c.wav")
 
-        assert self.piano_c_sr == signal.sr
+        assert self.piano_c_sr == signl.sr
 
-        assert np.all(self.piano_c.T == signal)
+        assert np.all(self.piano_c.T == signl)
 
 
     def test_sample_indexing(self):
         """test the indexing of the ndsignals with sample indices."""
         for test_ndarray in self.test_ndarrays:
-            assert np.all(test_ndarray == ndsignal(test_ndarray))
+            assert np.all(test_ndarray == ndsignal(test_ndarray, sr=1))
         
         signal = ndsignal(self.piano_c, self.piano_c_sr)
 
@@ -88,19 +79,55 @@ class NDSignalTestCase(unittest.TestCase):
 
         stop_sample = round(0.6 / piano_signal.T)
 
-        signal = piano_signal[0.1:0.6, :]
+        signl = piano_signal[0.1:0.6, :]
 
-        assert signal.channels == piano_signal.channels
+        assert np.all(signl == piano_signal[start_sample: stop_sample, :])
 
-        assert signal.sr == piano_signal.sr
+        assert signl.channels == piano_signal.channels
 
-        assert np.all(signal == piano_signal[start_sample: stop_sample, :])
+        assert signl.sr == piano_signal.sr
 
-        assert signal.duration == 0.5
+        assert signl.duration == 0.5
 
-        assert signal.N == 0.5 * 44100
-    
-    
+        assert signl.N == 0.5 * 44100
 
-    def test_time_indices_setter(self):
-        pass
+
+    def test_sample_indices_setter(self):
+        signl = ndsignal([[1,2,3], [1,2,3]], sr=44100)
+
+        # first sample on all the channels
+        signl[0,:] = 0
+
+        assert np.all(signl == np.array([[0,0], [2,2], [3,3]]))
+
+        # all samples on the second channel
+        signl[:, 1] = 1
+
+        assert np.all(signl == np.array([[0, 1], [2, 1], [3, 1]]))
+
+        # third sample on the second channel
+        signl[2, 1] = 10
+
+        assert np.all(signl == np.array([[0,1], [2,1], [3, 10]]))
+
+        # third sample on all channels
+        signl[2, :] = 9
+
+        assert np.all(signl == np.array([[0,1], [2,1], [9,9]]))
+
+        signl = ndsignal([[1,2,3,4], [1,2,3,4], [1,2,3,4], [1,2,3,4]], sr=44100)
+
+        # all samples on the second and third channel 
+        signl[:, 1:3] = [0,0]
+
+        assert np.all(signl == np.array([[1,0,0,1], [2,0,0,2], [3,0,0,3], [4,0,0,4]]))
+
+        
+        # the first two samples on the first two channels
+        signl[0:2, 0:2] = [9, 9]
+
+        assert np.all(signl == np.array([[9, 9, 0, 1], [9, 9, 0, 2], [3, 0, 0, 3], [4, 0, 0, 4]]))
+
+        
+        def test_time_indices_setter(self):
+            pass
