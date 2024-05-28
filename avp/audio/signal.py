@@ -74,7 +74,7 @@ class ndsignal(ndarray):
 
 
     def __new__(cls, samples, sr: int = 22_050, _no_transpose = False):
-        """create a new ndsignal; the samples are in channel-major `(n_samples,)`; or `(n_channels, n_samples)`"""
+        """create a new ndsignal; the samples are expected to be in channel-major `(n_samples,)`; or `(n_channels, n_samples)` and will be converted into sample-major, internally -- unless _notranspose is true."""
         obj = np.asarray(samples).view(cls)
 
         if len(list(obj.shape)) == 1:
