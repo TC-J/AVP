@@ -385,9 +385,9 @@ class signal:
 
 
 def distortion(initial: ndsignal, final: ndsignal):
-    fft_i = [channel.fft() for channel in initial.y]
+    fft_i = [scipy.fft.fft(channel) for channel in initial.y]
 
-    fft_f = [channel.fft() for channel in final.y]
+    fft_f = [scipy.fft.fft(channel) for channel in final.y]
 
     amplitude_distortion = [np.abs(fft_i[channel]) - np.abs(fft_f[channel]) for channel in range(fft_i.channels)]
 
