@@ -198,7 +198,7 @@ class ndsignal(ndarray):
 
 
     @property
-    def floor(self)
+    def floor(self):
         return np.min(np.abs(self.y))
 
 
@@ -262,7 +262,7 @@ class signal:
         pass
 
 
-    def __init__(self, audio: ndsignal | None, samplewidth: int | None = None, path: str | Path, time_start: float | None, duration: float | None, resample_hz: int | None = None, channels: int | None = None):
+    def __init__(self, audio: ndsignal | None, samplewidth: int | None = None, path: str | Path | None = None, time_start: float | None, duration: float | None, resample_hz: int | None = None, channels: int | None = None):
         # allow users to load at a time-offset. ?
         start = time_start or 0
 
@@ -339,7 +339,7 @@ class signal:
     def resample(self, new_hz: int):
         y = resampy.resample([channel for channel in self.inner.y], self.inner.sr, parallel=True)
 
-        self._original = self.inner.copy()
+        self._original = self._original or self.inner.copy()
 
         self.inner = ndsignal(y, new_hz)
     
