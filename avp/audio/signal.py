@@ -1,4 +1,4 @@
-from typing import Any, Self, List
+from typing import Any, Self, List, Tuple
 
 import math
 
@@ -25,6 +25,8 @@ import resampy
 import soundfile
 
 import pydub
+
+import pydub.effects
 
 import librosa
 
@@ -190,11 +192,36 @@ class ndsignal(ndarray):
         return self.T * self.N
     
 
-    def as_channel_major(self) -> np.ndarray:
-        """return as an ndarray in channel-major; in the shape: (n_channels, n_samples)."""
+    @property
+    def peak(self):
+        return np.max(np.abs(self.y))
+
+
+    @property
+    def floor(self)
+        return np.min(np.abs(self.y))
+
+
+    @property
+    def t(self) -> np.ndarray:
+        return np.arange(self.N) / self.sr
+
+
+    @property
+    def y(self) -> np.ndarray:
         return self.transpose().view(np.ndarray)
     
     
+    @property
+    def Fy(self) -> list[np.ndarray]:
+        return [scipy.fft.fft(channel) for channel in self.y]
+    
+    
+    @property
+    def Fx(self):
+        return scipy.fft.fftfreq(self.N, self.T)
+    
+
     def insert(self, at: int | float, signl: Self | np.ndarray | list) -> None:
         """
             insert an audio signal at the given sample-index (integer provided) or time-index (float provided).
@@ -231,7 +258,11 @@ class signal:
 
         so view this as a digital-signal-processing context for the audio signals.
     """
-    def __init__(self, audio: ndsignal | None, path: str | Path, time_start: float | None, duration: float | None, resample_hz: int | None = None, channels: int | None = None):
+    def generate(duration, sr, amp_range, freq_range, phase_range, noise_factors):
+        pass
+
+
+    def __init__(self, audio: ndsignal | None, samplewidth: int | None = None, path: str | Path, time_start: float | None, duration: float | None, resample_hz: int | None = None, channels: int | None = None):
         # allow users to load at a time-offset. ?
         start = time_start or 0
 
@@ -241,7 +272,7 @@ class signal:
 
         channels = channels or audio.channels 
 
-        # allow the user to increase the number of channels in the original audio. ?
+        # allow the user to increase the number of channels in the _originalinal audio. ?
         # copy the first channel into the number of requested channels.
         # this is when the audio contains less channels than what was specified.
         if channels > audio.channels:
@@ -249,8 +280,9 @@ class signal:
 
             audio = np.repeat(first_channel_data[:, np.newaxis], channels, axis=1)
         
+        self._bitdepth = (samplewidth or np.dtype(audio.dtype).itemsize) * 8
+        
         self.inner = audio
-
 
 
     def __getitem__(self, key):
@@ -261,3 +293,114 @@ class signal:
         self.inner.__setitem__(key, value)
     
 
+    _units = "none"
+
+
+    _bitdepth = None
+    
+
+    _orignal = None
+
+
+    @property
+    def sr(self):
+        return self.inner.sr
+    
+    
+    @sr.setter
+    def sr(self, new_hz):
+        self.resample(new_hz)
+    
+    
+    @property
+    def T(self):
+        return self.inner.T
+    
+    
+    @T.setter
+    def T(self, new_period):
+        self.resample(1 / new_period)
+
+
+    @property
+    def rms(self):
+        return np.sqrt(np.mean(self.inner ** 2))
+    
+    
+    @property
+    def norm(self):
+        return self._units
+
+
+    def into_inner(self) -> ndsignal:
+        return self.inner
+    
+    
+    def resample(self, new_hz: int):
+        y = resampy.resample([channel for channel in self.inner.y], self.inner.sr, parallel=True)
+
+        self._original = self.inner.copy()
+
+        self.inner = ndsignal(y, new_hz)
+    
+    
+    def fullscale_norm(self):
+        max_a = (2 ** self._bitdepth) - 1
+
+        factor = max_a / self.inner.peak
+
+        self._original = self._original or self.inner.copy()
+
+        self.inner *= factor
+
+        self._units = "0dBFS"
+
+        
+    def peak_norm(self):
+        max_a = 1.0
+
+        factor = 1.0 / self.inner.peak
+
+        self._original = self._original or self.inner.copy()
+
+        self.inner *= factor
+
+        self._units = "1dBFS"
+    
+    
+    def rms_norm(self, target_dBFS: float = -20.0):
+        current_dBFS = self.rms
+
+        factor = 10 ** (target_dBFS / current_dBFS) / current_dBFS
+
+        self._original = self._original or self.inner.copy()
+
+        self.inner *= factor
+
+        self._units = "rms_" + str(target_dBFS) + "dBFS"
+    
+    
+    def distortion(self):
+        pass
+
+
+def distortion(initial: ndsignal, final: ndsignal):
+    fft_i = [channel.fft() for channel in initial.y]
+
+    fft_f = [channel.fft() for channel in final.y]
+
+    amplitude_distortion = [np.abs(fft_i[channel]) - np.abs(fft_f[channel]) for channel in range(fft_i.channels)]
+
+    phase_distortion = np.angle(fft_f) - np.angle(fft_i)
+
+    harmonic_i = [np.sum(np.abs(channel[1:]) ** 2) / np.abs(channel[0]) ** 2 for channel in fft_i]
+
+    harmonic_f = [np.sum(np.abs(channel[1:]) ** 2) / np.abs(channel[0]) ** 2 for channel in fft_f]
+
+    harmonic_distortion = harmonic_f - harmonic_i
+
+    return (
+        amplitude_distortion,
+        phase_distortion,
+        harmonic_distortion
+    )
