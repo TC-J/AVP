@@ -262,7 +262,7 @@ class signal:
         pass
 
 
-    def __init__(self, audio: ndsignal | None, samplewidth: int | None = None, path: str | Path | None = None, time_start: float | None, duration: float | None, resample_hz: int | None = None, channels: int | None = None):
+    def __init__(self, audio: ndsignal | None, samplewidth: int | None = None, path: str | Path | None = None, time_start: float | None = 0., duration: float | None = None, resample_hz: int | None = None, channels: int | None = None):
         # allow users to load at a time-offset. ?
         start = time_start or 0
 
@@ -381,7 +381,7 @@ class signal:
     
     
     def distortion(self):
-        pass
+        return distortion(self._original, self.inner)
 
 
 def distortion(initial: ndsignal, final: ndsignal):
