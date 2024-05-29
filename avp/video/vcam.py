@@ -11,7 +11,7 @@ class vcam:
     
     
     def __str__(self) -> str:
-        return f"vcam(\n camera # = {self.dev},\n resolution = {self.resolution},\n fps = {self.fps},\n brightness = {self.brightness},\n saturation = {self.saturation},\n gamma = {self.gamma},\n gain = {self.gain}\n)"
+        return f"vcam(\n device = {self.dev},\n resolution = {self.resolution},\n fps = {self.fps},\n brightness = {self.brightness},\n saturation = {self.saturation},\n gamma = {self.gamma},\n gain = {self.gain}\n)"
     
 
     def __repr__(self):
