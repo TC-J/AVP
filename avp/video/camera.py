@@ -1,9 +1,11 @@
 import cv2
 
-from avp.video.photo import ndphoto
+import numpy as np
+
+from avp.video.photo import photo
 
 
-class vcam:
+class camera:
     def __init__(self, device: int = 0):
         self.dev = device
 
@@ -11,7 +13,7 @@ class vcam:
     
     
     def __str__(self) -> str:
-        return f"vcam(\n device = {self.dev},\n resolution = {self.resolution},\n fps = {self.fps},\n brightness = {self.brightness},\n saturation = {self.saturation},\n gamma = {self.gamma},\n gain = {self.gain}\n)"
+        return f"vcam(\n device = {self.dev},\n resolution = {self.resolution},\n fps = {self.fps},\n format = {self.format},\n brightness = {self.brightness},\n saturation = {self.saturation},\n gamma = {self.gamma},\n gain = {self.gain}\n)"
     
 
     def __repr__(self):
@@ -101,9 +103,9 @@ class vcam:
     
     
     def photo(self) -> ndphoto:
-        success, frame = self.inner.read()
+        _, frame = self.inner.read()
 
-        return ndphoto(frame, format="BGR") if success else None
+        return ndphoto(pixels=frame, format="BGR")
     
     
     def done(self):
@@ -114,9 +116,8 @@ class vcam:
         n = 0
 
         while True:
-            if not vcam(n).inner.isOpened(): break
+            if not camera(n).inner.isOpened(): break
 
             n += 1
 
         return n
-
