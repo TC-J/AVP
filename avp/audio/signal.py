@@ -38,7 +38,7 @@ import pydub
 
 from avp.audio.util import _standardize_array, _pretty_time_format, _add_channels_as_copy
 
-
+from scipy.signal import butter, filtfilt, lfilter
 
 class ndsignal(ndarray):
     """this is an array of audio samples in sample-major `(n_samples, n_channels)`.
@@ -324,7 +324,7 @@ class signal:
 
     @property
     def rms(self):
-        return np.sqrt(np.mean(self.inner ** 2))
+        return [librosa.feature.rms(channel) for channel in self.inner.y]
     
     
     @property
@@ -369,7 +369,7 @@ class signal:
     
     
     def rms_norm(self, target_dBFS: float = -20.0):
-        current_dBFS = self.rms
+        current_dBFS = np.mean(self.rms)
 
         factor = 10 ** (target_dBFS / current_dBFS) / current_dBFS
 
