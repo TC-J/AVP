@@ -1,16 +1,14 @@
-from typing import Any, Self, List, Tuple
+from numbers import Complex
 
-import math
+from types import NoneType
 
-from pathlib import Path
-
-from warnings import warn
+from typing import Self, Any, Tuple
 
 import numpy as np
 
 from numpy.typing import NDArray
 
-from numpy import full, ndarray
+from numpy import complex128, ndarray
 
 import matplotlib.pyplot as plt
 
@@ -20,14 +18,6 @@ import scipy.signal
 
 import scipy.fft
 
-import resampy
-
-import soundfile
-
-import pydub
-
-import pydub.effects
-
 import librosa
 
 import librosa.feature
@@ -36,9 +26,7 @@ import librosa.display
 
 import pydub
 
-from avp.audio.util import _standardize_array, _pretty_time_format, _add_channels_as_copy
-
-from scipy.signal import butter, filtfilt, lfilter
+from avp.audio.util import _standardize_array, _pretty_time_format, _plt_use_style
 
 class ndsignal(ndarray):
     """this is an array of audio samples in sample-major `(n_samples, n_channels)`.
@@ -111,8 +99,8 @@ class ndsignal(ndarray):
     
     
     def __setitem__(self, key, value):
-#        if isinstance(value, np.ndarray | list):
-#            value = _standardize_array(value)
+        if isinstance(value, np.ndarray | list):
+            value = _standardize_array(value)
 
         super().__setitem__(self._key(key), value)
 
@@ -156,6 +144,9 @@ class ndsignal(ndarray):
             for subkey in list(key):
                 if isinstance(subkey, float | int):
                     modified_key.append(self._index(subkey))
+                
+                elif isinstance(subkey, NoneType):
+                    modified_key.append(np.newaxis)
 
                 else:
                     modified_key.append(self._slice(subkey))
@@ -190,217 +181,148 @@ class ndsignal(ndarray):
     def duration(self) -> float:
         """the total time elapsed by this signal."""
         return self.T * self.N
+
+
+    @property
+    def ndarray(self) -> np.ndarray:
+        return self.transpose().view(np.ndarray)
     
 
     @property
     def peak(self):
-        return np.max(np.abs(self.y))
+        return np.max(np.abs(self.ndarray))
+
+
+    @property
+    def dynamic_range(self):
+        return 20 * np.log10(self.peak / self.floor)
 
 
     @property
     def floor(self):
-        return np.min(np.abs(self.y))
+        return np.min(np.abs(self.ndarray))
 
 
     @property
-    def t(self) -> np.ndarray:
+    def time_domain(self) -> np.ndarray:
         return np.arange(self.N) / self.sr
 
 
     @property
-    def y(self) -> np.ndarray:
-        return self.transpose().view(np.ndarray)
+    def frequency_domain(self):
+        return librosa.fft_frequencies(sr=self.sr, n_fft=self.N)[1:]
     
     
     @property
-    def Fy(self) -> list[np.ndarray]:
-        return [scipy.fft.fft(channel) for channel in self.y]
-    
-    
-    @property
-    def Fx(self):
-        return scipy.fft.fftfreq(self.N, self.T)
-    
-
-    def insert(self, at: int | float, signl: Self | np.ndarray | list) -> None:
+    def harmonics(self) -> Tuple[NDArray[complex128] | complex128, NDArray[complex128]]:
         """
-            insert an audio signal at the given sample-index (integer provided) or time-index (float provided).
+            computes the FFT on each channel.
+
+            ### Returns
+            `(dc, ffts) -> NDarray[Complex], NDArray[Complex]`: returns the direct-current for each channel (average magnitude; magnitude of 0 Hertz),
+            indexed as `dc[nth_channel] -> Complex Valued DC of Channel`;
+            and then, the FFTs for each channel; i.e., the index `ffts[nth_channel, nth_frequency_bin]` returns the complex-valued frequency bin on that channel.
+            
         """
-        signl = _standardize_array(signl)
+        # NumPy's FFT
+        np_fft = np.fft.fft(self.ndarray, axis=1)
 
-        at = self._index(at)
+        # first value on all channels; 0 Hz Frequency Bin
+        dc = np_fft[:, 0] 
+
+        # all channels; exclude 0 Hz and only include positive Frequency Bins
+        ffts = np_fft[:, 1:self.N // 2 + 1] 
+
+        return dc, ffts
+
+
+    def into_mono(self, interleave: bool = False) -> Self:
+        if not interleave:
+            samples= np.sum(self, axis=1) / self.channels
+
+            samples = samples[:, np.newaxis]
+
+        else:
+            samples = np.zeros((self.N * self.channels, 1))
+
+            index = 0
+
+            for channel in range(self.channels):
+                for sample in range(self.N):
+                    samples[index, 0] = self[sample, channel]
+
+                    index += 1
+
+        return ndsignal(
+            samples=samples,
+            sr=self.sr,
+            _no_transpose=True
+        )
+    
+
+    def peak_normalize(self):
+        return ndsignal(
+            samples=self / self.peak,
+            sr=self.sr,
+            _no_transpose=True
+        )
 
     
-    def split(self, interval: float | int) -> List[np.ndarray]:
-        """split the audio signal into an array of smaller ndarrays (in channel-major); the interval is a sample-index when an integer is provided and a time index when a float is provided."""
-        interval = self._index(interval)
+    def normalize(self, bit_width: int | None = None):
+        """Full Scale Normalize the audio samples based on bit-width (equivalently, sample width * 8)."""
+        bit_width = bit_width - 1 if bit_width else np.dtype(self.dtype).itemsize * 8 - 1
 
-        lst = list()
+        maxval = 2**bit_width - 1
 
-        for i in range(0, self.N, interval):
-            if i + interval < self.N:
-                lst.append(self[i:i + interval, :].transpose().view(np.ndarray))
+        factor = maxval / self.peak
 
-            else:
-                lst.append(self[i:, :].transpose().view(np.ndarray))
-
-
-    def save(self, fpath: str):
-        pass
-
-
-class signal:
-    """
-        this is a digital signal.
-
-        the difference between this and `ndsignal` is that this contains an ndsignal; making it a mutable container for the ndsignal;
-        this allows resampling without tracking a new variable.
-
-        so view this as a digital-signal-processing context for the audio signals.
-    """
-    def generate(duration, sr, amp_range, freq_range, phase_range, noise_factors):
-        pass
-
-
-    def __init__(self, audio: ndsignal | None, samplewidth: int | None = None, path: str | Path | None = None, time_start: float | None = 0., duration: float | None = None, resample_hz: int | None = None, channels: int | None = None):
-        # allow users to load at a time-offset. ?
-        start = time_start or 0
-
-        # load audio
-        # allow users to resample and specify one-channel. ?
-        audio = audio or ndsignal.load(path, start, duration, resample_hz, to_mono = True if channels == 1 else False)
-
-        channels = channels or audio.channels 
-
-        # allow the user to increase the number of channels in the _originalinal audio. ?
-        # copy the first channel into the number of requested channels.
-        # this is when the audio contains less channels than what was specified.
-        if channels > audio.channels:
-            first_channel_data = audio[:, 0]
-
-            audio = np.repeat(first_channel_data[:, np.newaxis], channels, axis=1)
+        samples = self * factor
         
-        self._bitdepth = (samplewidth or np.dtype(audio.dtype).itemsize) * 8
+        return ndsignal(
+            samples=samples, 
+            sr=self.sr,
+            _no_transpose=True
+        )
+    
+
+    def as_db(self, ref_value: int | float):
+        for channel in range(self.channels):
+            for sample in range(self.N):
+                self[sample, channel] = 20 * np.log10(self[sample, channel] / ref_value)
+    
+
+    def as_peak_db(self):
+        self.as_db(self.peak)
+
+
+    def plot(self):
+        _plt_use_style()
+
+        signal = self.into_mono().peak_normalize()
+
+        plt.plot(signal.time_domain, signal.ndarray[0])
+
+        plt.ylabel("Signal Amplitude")
+
+        plt.xlabel("Time [s]")
+
+        plt.ylim((-1., 1.))
+    
+    
+    def harmonic_plot(self):
+        signal = self.into_mono().peak_normalize()
+
+        _, ffts = signal.harmonics
+
+        f = signal.frequency_domain
+
+        db = librosa.amplitude_to_db(S=np.abs(ffts[0]), top_db=np.max(np.abs(ffts[0])))
+
+        _plt_use_style()
+
+        plt.plot(f, db)
+
+        plt.xlabel("Frequency [Hz]")
+
+        plt.ylabel("Frequency Amplitude [dB]")
         
-        self.inner = audio
-
-
-    def __getitem__(self, key):
-        return self.inner.__getitem__(key)
-    
-    
-    def __setitem__(self, key, value):
-        self.inner.__setitem__(key, value)
-    
-
-    _units = "none"
-
-
-    _bitdepth = None
-    
-
-    _orignal = None
-
-
-    @property
-    def sr(self):
-        return self.inner.sr
-    
-    
-    @sr.setter
-    def sr(self, new_hz):
-        self.resample(new_hz)
-    
-    
-    @property
-    def T(self):
-        return self.inner.T
-    
-    
-    @T.setter
-    def T(self, new_period):
-        self.resample(1 / new_period)
-
-
-    @property
-    def rms(self):
-        return [librosa.feature.rms(channel) for channel in self.inner.y]
-    
-    
-    @property
-    def norm(self):
-        return self._units
-
-
-    def into_inner(self) -> ndsignal:
-        return self.inner
-    
-    
-    def resample(self, new_hz: int):
-        y = resampy.resample([channel for channel in self.inner.y], self.inner.sr, parallel=True)
-
-        self._original = self._original or self.inner.copy()
-
-        self.inner = ndsignal(y, new_hz)
-    
-    
-    def fullscale_norm(self):
-        max_a = (2 ** self._bitdepth) - 1
-
-        factor = max_a / self.inner.peak
-
-        self._original = self._original or self.inner.copy()
-
-        self.inner *= factor
-
-        self._units = "0dBFS"
-
-        
-    def peak_norm(self):
-        max_a = 1.0
-
-        factor = 1.0 / self.inner.peak
-
-        self._original = self._original or self.inner.copy()
-
-        self.inner *= factor
-
-        self._units = "1dBFS"
-    
-    
-    def rms_norm(self, target_dBFS: float = -20.0):
-        current_dBFS = np.mean(self.rms)
-
-        factor = 10 ** (target_dBFS / current_dBFS) / current_dBFS
-
-        self._original = self._original or self.inner.copy()
-
-        self.inner *= factor
-
-        self._units = "rms_" + str(target_dBFS) + "dBFS"
-    
-    
-    def distortion(self):
-        return distortion(self._original, self.inner)
-
-
-def distortion(initial: ndsignal, final: ndsignal):
-    fft_i = [scipy.fft.fft(channel) for channel in initial.y]
-
-    fft_f = [scipy.fft.fft(channel) for channel in final.y]
-
-    amplitude_distortion = [np.abs(fft_i[channel]) - np.abs(fft_f[channel]) for channel in range(fft_i.channels)]
-
-    phase_distortion = np.angle(fft_f) - np.angle(fft_i)
-
-    harmonic_i = [np.sum(np.abs(channel[1:]) ** 2) / np.abs(channel[0]) ** 2 for channel in fft_i]
-
-    harmonic_f = [np.sum(np.abs(channel[1:]) ** 2) / np.abs(channel[0]) ** 2 for channel in fft_f]
-
-    harmonic_distortion = harmonic_f - harmonic_i
-
-    return (
-        amplitude_distortion,
-        phase_distortion,
-        harmonic_distortion
-    )

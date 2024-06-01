@@ -1,6 +1,8 @@
 from functools import reduce
 from typing import Self
 
+import PIL.Image
+
 import cv2
 
 from pathlib import Path
@@ -11,12 +13,24 @@ import re
 
 from matplotlib.pyplot import imshow
 
+import PIL
+
+from PIL import Image
 
 class ndphoto(np.ndarray):
-    def __new__(cls, pixels: np.ndarray | list, format: str = "BGR"):
+    def load(fpath: str):
+        image = PIL.Image.open(fpath)
+
+        return ndphoto(
+            pixels=np.array(image), 
+            cmode=image.mode
+        )
+    
+
+    def __new__(cls, pixels: np.ndarray | list, cmode: str = "BGR"):
         obj = np.asarray(pixels).view(cls)
 
-        obj._format = format if format.isupper() else format.upper()
+        obj._cmode = cmode if cmode.isupper() else cmode.upper()
 
         return obj
 
@@ -24,49 +38,61 @@ class ndphoto(np.ndarray):
     def __array_finalize__(self, obj):
         if obj is None: return
 
-        self._format = getattr(obj, "_format", None)
+        self._cmode = getattr(obj, "_cmode", None)
     
 
     @property
-    def format(self):
-        if len(self._format.split("_")) == 2:
-            self._format = self._format.split("_")[0]
+    def cmode(self):
+        if len(self._cmode.split("_")) == 2:
+            self._cmode = self._cmode.split("_")[0]
 
-        return self._format
+        return self._cmode
 
     
-    @format.setter
-    def format(self, to: str):
-        if self.convert(to) is not None:
+    @cmode.setter
+    def cmode(self, to: str):
+        if self.convert_mode(to) is not None:
             raise Exception("Use ndphoto.convert on color conversions that are not the same shape stomp blink")
     
 
-    def sift(self, contrast_th = 0.03, edge_th = 10):
-        sift = cv2.SIFT_create()
+    @property
+    def size(self) -> tuple:
+        return self.shape[1], self.shape[0]
 
-        sift.setContrastThreshold(contrast_th)
 
-        sift.setEdgeThreshold(edge_th)
+    def resize(self, width: int | float, height: int | float)-> Self:
+        if width == -1:
+            width = self.shape[1]
+        
+        if height == -1:
+            height = self.shape[0]
+        
+        if isinstance(width, float):
+            width = self.shape[1] * width
+        
+        if isinstance(height, float):
+            height = self.shape[0] * height
 
-        gray = self.convert("GRAY", False)
+        resized = cv2.resize(self, (width, height), cv2.INTER_LANCZOS4)
 
-        keypoints, descriptors = sift.detectAndCompute(gray, None)
-
-        return keypoints, descriptors
+        return ndphoto(
+            pixels=np.array(resized),
+            cmode=self.cmode
+        )
     
 
-    def convert(self, to: str = "RGB", try_inplace = True) -> Self | None:
+    def convert_mode(self, to: str = "RGB", try_inplace = True) -> Self | None:
         to = to if to.isupper() else to.upper()
 
-        if len(self._format.split("_")) == 2:
-            _format = self._format.split("_")[0]
+        if len(self._cmode.split("_")) == 2:
+            _format = self._cmode.split("_")[0]
 
-        formats = ndphoto.available_format_conversions()
+        formats = ndphoto.available_cmode_conversions()
 
-        if self._format + " -> " + to not in formats:
-            to = [name for name in formats if re.search(self._format + " -> " + to, name)][0].split(" -> ")[1]
+        if self._cmode + " -> " + to not in formats:
+            to = [name for name in formats if re.search(self._cmode + " -> " + to, name)][0].split(" -> ")[1]
 
-        codename = "cv2.COLOR_" + self._format + "2" + to
+        codename = "cv2.COLOR_" + self._cmode + "2" + to
 
         new = cv2.cvtColor(
             src=self.view(np.ndarray), 
@@ -76,27 +102,23 @@ class ndphoto(np.ndarray):
         if new.shape == self.shape and try_inplace:
             np.copyto(src=new, dst=self, casting="unsafe")
 
-            self._format = to
+            self._cmode = to
 
         else:
-            return ndphoto(new, format=to)
+            return ndphoto(new, cmode=to)
     
     
     def show(self):
         imshow(self)
-    
-    
-    def keypoints_show(self, color=(160, 32, 240), contrast_th=0.03, edge_th=10):
-        keypoints, descriptors = self.sift(contrast_th, edge_th)
-
-        img = self.copy()
-
-        img = cv2.drawKeypoints(image=copy_self, keypoints=keypoints, outImage=None, color=color, flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-
-        imshow(img)
 
 
-    def available_format_conversions() -> list[str]:
+    def save(self, fpath: str | Path):
+        image = PIL.Image.fromarray(self, mode=self.cmode)
+
+        image.save(fpath)
+
+
+    def available_cmode_conversions() -> list[str]:
         constants = ["_".join(name.split("_")[1:]).replace("2", " -> ", 1) for name in dir(cv2) if name.isupper() and name.startswith("COLOR_") and not re.search("BAYER", name)]
 
         return constants

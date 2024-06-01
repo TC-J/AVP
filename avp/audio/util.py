@@ -2,6 +2,8 @@ from logging import warn
 
 import numpy as np
 
+import matplotlib.pyplot as plt
+
 def _pretty_time_format(time: float | int, starting_places = 12, unit_delim="", fullunitname = False):
     units: str
 
@@ -50,3 +52,13 @@ def _add_channels_as_copy(array: np.ndarray | list, channels: int):
     if array.shape[1] >= 1: warn("don't use with more than one-source channel unless it is OK to overwrite those channels' data with the first channel's data.")
 
     return np.repeat(array[:, 0][:, np.newaxis], channels, axis=1)
+
+
+def _plt_use_style():
+    style = plt.style.available
+
+    if "bmh" in style:
+        plt.style.use("bmh")
+
+    else:
+        plt.style.use("ggplot")
