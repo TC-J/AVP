@@ -39,3 +39,5 @@ class iirfilter:
 
     def __call__(self, signal: ndsignal):
         return ndsignal(samples=scipy.signal.sosfiltfilt(self.sos, signal.ndarray, axis=1), sr=signal.sr)
+
+

@@ -295,6 +295,18 @@ class ndsignal(ndarray):
         self.as_db(self.peak)
 
 
+    def spectra(self, frame_width_ms: float = 2.5, frame_hop_ms: float = 1.0, scaling="spectrum", mono=False):
+        window_size = int(frame_width_ms / 1e3 * self.sr)
+
+        hop_size = int(frame_hop_ms / 1e3 * self.sr)
+
+        nfft = 2**np.ceil(np.log2(window_size))
+
+        noverlap = window_size - hop_size
+
+        return scipy.signal.spectrogram(self.ndarray if not mono else self.into_mono().ndarray, self.sr, nperseg=window_size, nfft=nfft, noverlap=noverlap, scaling=scaling, axis=1)
+
+
     def plot(self):
         _plt_use_style()
 
@@ -316,7 +328,7 @@ class ndsignal(ndarray):
 
         f = signal.frequency_domain
 
-        db = librosa.amplitude_to_db(S=np.abs(ffts[0]), top_db=np.max(np.abs(ffts[0])))
+        db = librosa.amplitude_to_db(S=np.abs(ffts[0]), ref=np.max(np.abs(ffts[0])))
 
         _plt_use_style()
 
@@ -326,3 +338,34 @@ class ndsignal(ndarray):
 
         plt.ylabel("Frequency Amplitude [dB]")
         
+    
+    def spectral_power_plot(self, frame_width_ms: float = 2.5, frame_hop_ms: float = 1.0):
+        f, t, Sxx = self.spectra(frame_width_ms=frame_width_ms, frame_hop_ms=frame_hop_ms, scaling="spectrum", mono=True)
+
+        _plt_use_style()
+
+        plt.pcolormesh(t, f, Sxx[0], cmap="coolwarm", shading="gouraud", vmax=np.max(Sxx[0]), vmin=np.min(Sxx[0]), norm="log")
+
+        plt.ylim((0, self.sr // 2))
+
+        plt.ylabel("Frequency [Hz]")
+
+        plt.xlabel("Time [s]")
+
+        plt.colorbar(label="Spectral Power")
+
+
+    def spectral_density_plot(self, frame_width_ms: float = 2.5, frame_hop_ms: float = 1.0):
+        f, t, Sxx = self.spectra(frame_width_ms=frame_width_ms, frame_hop_ms=frame_hop_ms, scaling="density", mono=True)
+
+        _plt_use_style()
+
+        plt.pcolormesh(t, f, Sxx[0], cmap="coolwarm", shading="gouraud", vmax=np.max(Sxx[0]), vmin=np.min(Sxx[0]), norm="log")
+
+        plt.ylim((0, self.sr // 2))
+
+        plt.ylabel("Frequency [Hz]")
+
+        plt.xlabel("Time [s]")
+
+        plt.colorbar(label="Spectral Density")
